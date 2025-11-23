@@ -112,7 +112,7 @@ FedPrism-IoV/
 ### Setup
 
 ```bash
-git clone https://github.com/<username>/FedPrism-IoV
+git clone https://github.com/shrey-004/YOLO_With_FEDPRISM
 cd FedPrism-IoV
 pip install -r requirements.txt
 ```
