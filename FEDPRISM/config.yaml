@@ -1,0 +1,32 @@
+# Federated Learning Experiment Configuration
+
+# Global Settings
+gpu: -1 # -1 for CPU, 0+ for GPU ID
+seed: 1
+results_dir: "./results"
+
+# Data Settings
+dataset: "cifar10" # Options: cifar10, cifar100, svhn, fmnist
+partition: "dirichlet" # Options: dirichlet, pathological
+alpha: 0.5 # Dirichlet alpha
+num_users: 100
+frac: 0.1 # Fraction of clients per round
+
+# Training Settings
+epochs: 100 # Total communication rounds
+local_ep: 10 # Local epochs
+local_bs: 32 # Local batch size
+bs: 32 # Test batch size
+lr: 0.01
+momentum: 0.9
+
+# Algorithm Settings
+algorithm: "fedprism" # Options: fedavg, local, fedclust, fedprism
+
+# Fed-PRISM Specific
+num_clusters: 5
+clustering_method: "kmeans" # Options: kmeans, single, average, covariance
+alpha_coef: 0.5 # Initial alpha (will be trained if adaptive)
+clustering_freq: 10
+num_assignments: 2
+trainable_alpha: true # If true, alpha is learned per client

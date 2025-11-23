@@ -1,0 +1,21 @@
+these are four algorithms , and i wanna benchmark them , the 1st algorithm is my own algortihm , rest are already therr
+use cifar100 , cifar 10 , svhn , fmnist , all these datasets
+
+but make it highly non iid using dirchilet 0.5 ,0.3 and 0.1 , giving some classes common and most classes uncommon discjoint (to ensure that different clusters are fomred) , patholoical
+
+NOTE: use le net 50 for the models , i want total 100 clients to be used , 
+use combinations of 100 and 300 communication rounds.
+
+CLIENT SAMPLE FRACTION	LOCAL EPOCHS	BATCH SIZE	OPTIMIZER CONFIG	COMM ROUNDS	LEARNING RATE
+0.1	10	32	SGD 0.9 100	0.01.
+
+use comibnation of the differnet daset and hte idffenrt kinds of distubutons and track and keep note of all epeirments
+
+
+
+so to summarize i want multipel runs of all algorthms benchmarked across these datst , save data and plots for each algorithm for each run about the kind of data used for every client , the reasons for the cluster 
+and most imprntaly the plots for the clusters as well as overall performance , and test on global test sets as well as local test sets for each clients as well. the main aim is that the comparison should be uniform 
+
+I Wanna publish a paepr , so all the runs have to be very consitnet and repeatable  ,and save pltos for all.
+
+i just wanna run a main file once that runs everyhting and give me the results. all results compared at once and indidually also , with formal report . 

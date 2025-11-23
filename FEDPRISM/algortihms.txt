@@ -1,0 +1,475 @@
+algorthm 1 (try wtih average linkkage , single likea ge and covarnc and store all results)
+
+Technical Report: Fed-PRISM Server Implementation
+
+Implementation Focus: Server-Side Logic for Federated Personalized and Regularized Instance-Specific Model (Fed-PRISM)
+
+Objective: To detail the server's role in coordinating clients, aggregating cluster-specific updates, and periodically re-clustering clients using a soft assignment mechanism to maximize personalization and robustness in non-IID federated learning environments.
+
+1. Fed-PRISM System Architecture and Parameters
+
+The Fed-PRISM server maintains three types of models:
+
+Global Model ($\mathbf{w}_g$): The standard federated average model, providing generalization.
+
+Cluster Models ($\mathbf{w}_c$): $K$ specialized models, each tailored to a specific client cluster.
+
+Personalized Model ($\mathbf{w}_{i}^{\text{pers}}$): An ensemble blend of $\mathbf{w}_g$ and the relevant $\mathbf{w}_c$'s for client $i$.
+
+1.1 Key System Hyperparameters
+
+The following parameters are crucial to the server's operation:
+
+Parameter
+
+Symbol
+
+Description
+
+Role in Fed-PRISM
+
+Number of Clusters
+
+$K$ (or k)
+
+The total number of specialized cluster models maintained.
+
+Defines the granularity of personalization.
+
+Num. Assignments
+
+$m$
+
+The maximum number of clusters a client is softly assigned to.
+
+Controls the degree of mixing in the soft assignment step ($m \le K$).
+
+Clustering Frequency
+
+$C$ (or c)
+
+The number of communication rounds between cluster recalculations.
+
+Balances computational load with cluster stability.
+
+Ensemble Coefficient
+
+$\alpha$
+
+The weight applied to the Global Model during personalization.
+
+Regularizes the personalized model towards the global consensus.
+
+Clustering Method
+
+
+
+The technique used to group clients: K-Means, Hierarchical, or Covariance.
+
+Determines whether grouping is based on model space or task space.
+
+2. Server-Side Logic (Algorithm 1: Aggregation and Ensemble)
+
+The server executes the following sequence of operations each round $t$:
+
+Step 1: Client Selection and Distribution (Round Start)
+
+Select Clients: Sample a subset of clients $\mathcal{S}_t$ based on the sampling rate $R$.
+
+Distribute Models: For each selected client $i \in \mathcal{S}_t$:
+a.  Retrieve the client's current soft assignment weights $W_{i, c}$ from the client map.
+b.  Generate Personalized Model $\mathbf{w}_{i}^{\text{pers}}$ using the ensemble formula (see Section 4).
+c.  Send $\mathbf{w}_{i}^{\text{pers}}$ to client $i$.
+
+Step 2: Update Collection (Client Return)
+
+Clients $i \in \mathcal{S}_t$ train their personalized models locally and return the parameter update vector, $\mathbf{\Delta}_i = \mathbf{w}_{i}^{\text{local}} - \mathbf{w}_{i}^{\text{start}}$.
+
+The server aggregates these updates based on two streams: one for the Global Model and one for the Cluster Models.
+
+Step 3: Model Aggregation
+
+The aggregation updates both the Global Model and the $K$ Cluster Models simultaneously.
+
+a. Global Model Aggregation ($\mathbf{w}_g$):
+The global model is updated using the simple average of all received updates $\mathbf{\Delta}_i$:
+
+$$\mathbf{w}_{g}^{t+1} = \mathbf{w}_{g}^{t} + \frac{1}{|\mathcal{S}_t|} \sum_{i \in \mathcal{S}_t} \mathbf{\Delta}_i$$
+
+b. Cluster Model Aggregation ($\mathbf{w}_c$):
+Each cluster model $c$ is updated by all clients $i \in \mathcal{S}_t$ but weighted by their soft assignment score $W_{i, c}$. This ensures that only clients highly relevant to cluster $c$ heavily influence its model.
+
+$$\mathbf{w}_{c}^{t+1} = \mathbf{w}_{c}^{t} + \frac{1}{\sum_{i \in \mathcal{S}_t} W_{i, c}} \sum_{i \in \mathcal{S}_t} W_{i, c} \cdot \mathbf{\Delta}_i$$
+
+Step 4: Conditional Re-Clustering
+
+If the current round $t$ is a multiple of the clustering frequency $C$ ($t \equiv 0 \pmod{C}$), the server executes Algorithm 2: UpdateClusters (Section 3) to recalculate the client assignments $W_{i, c}$ based on the latest client updates or model states.
+
+3. Cluster Update Logic (Algorithm 2: UpdateClusters)
+
+This algorithm defines how clients are grouped and how their soft assignment weights are calculated.
+
+3.1 Feature Vector Generation
+
+For all reporting clients in $\mathcal{S}_t$, the server extracts a feature vector:
+
+Parameter Vector ($\mathbf{\Theta}$): The flattened parameter vector of the updated local model $\mathbf{w}_{i}^{\text{local}}$. (Used for K-Means and Hierarchical).
+
+Update Vector ($\mathbf{\Delta}$): The flattened update $\mathbf{\Delta}_i = \mathbf{w}_{i}^{\text{local}} - \mathbf{w}_{i}^{\text{start}}$. (Used for Covariance).
+
+3.2 Clustering Methods
+
+The choice of method determines how the initial hard clusters are formed:
+
+Method
+
+Feature Basis
+
+Clustering Technique
+
+Similarity Metric
+
+K-Means
+
+$\mathbf{\Theta}$ (Model Weights)
+
+K-Means Clustering
+
+Euclidean Distance
+
+Hierarchical
+
+$\mathbf{\Theta}$ (Model Weights)
+
+Agglomerative Clustering (Ward Linkage)
+
+Euclidean Distance
+
+Covariance
+
+$\mathbf{\Delta}$ (Model Updates)
+
+Spectral Clustering
+
+Task Covariance (Normalized Correlation)
+
+3.3 Soft Assignment Phase
+
+Regardless of the clustering method used to find the initial cluster centroids $C_c$, the soft assignment mechanism remains the same:
+
+Similarity Measurement: For each client $i$ and every centroid $C_c$, the cosine similarity $\text{Sim}_{i, c}$ between the client's feature vector and the centroid is computed.
+
+Top-$m$ Selection: Identify the set of $m$ clusters $\mathcal{M}_i$ that yield the highest similarities for client $i$.
+
+Softmax Weight Calculation: The final weight $W_{i, c}$ for client $i$ on cluster $c \in \mathcal{M}_i$ is calculated using a Softmax-like function over the top-$m$ similarities:
+
+$$W_{i, c} = \begin{cases} \frac{\exp(\text{Sim}_{i, c})}{\sum_{c' \in \mathcal{M}_i} \exp(\text{Sim}_{i, c'})} & \text{if } c \in \mathcal{M}_i \\ 0 & \text{if } c \notin \mathcal{M}_i \end{cases}$$
+
+This $W_{i, c}$ map is then stored and used in the subsequent aggregation and personalization steps.
+
+4. Personalized Model Generation (The Ensemble Step)
+
+When preparing a model for client $i$ at the start of a round, the server combines the three model types using the stored soft assignment weights $W_{i, c}$ and the ensemble coefficient $\alpha$.
+
+The final personalized model $\mathbf{w}_{i}^{\text{pers}}$ for client $i$ is calculated layer by layer:
+
+$$\mathbf{w}_{i}^{\text{pers}} = \alpha \cdot \mathbf{w}_{g} + (1 - \alpha) \cdot \sum_{c=1}^{K} W_{i, c} \cdot \mathbf{w}_{c}$$
+
+This ensemble approach achieves the "Personalized and Regularized" aspect of Fed-PRISM:
+
+$\alpha \cdot \mathbf{w}_{g}$ provides regularization, ensuring the model maintains generalized knowledge.
+
+$(1 - \alpha) \cdot \sum W_{i, c} \cdot \mathbf{w}_{c}$ provides personalization, focusing the model's capacity on the specialized knowledge of the clusters most relevant to client $i$'s local data.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+2nd algorithm
+fedclust
+
+The FedClust Algorithm: A Solution for Data Heterogeneity
+
+FedClust, short for Federated Clustering, is an algorithm proposed to address the fundamental challenge of data heterogeneity (non-IID data) in standard Federated Learning (FL) frameworks like FedAvg. Instead of aggregating all clients into a single global model, FedClust groups clients into clusters based on the similarity of their local model updates, resulting in multiple, tailored global models—one for each cluster.
+
+1. Motivation: The Non-IID Challenge
+
+In classic Federated Learning, a single global model ($\mathbf{w}_g$) is trained. When client data distributions ($P_k(\mathbf{x}, y)$) are significantly different (non-IID), this leads to two main problems:
+
+Client Drift: Local models ($\mathbf{w}_k$) diverge significantly during local training because the local objective function is a poor proxy for the global objective.
+
+Poor Generalization: The aggregated global model is a compromise that might perform poorly for most clients, especially those with unique data distributions.
+
+FedClust mitigates this by allowing clients with similar objectives (implied by similar local models) to collaborate, yielding a set of cluster-specific models $\{\mathbf{w}_{c_1}, \mathbf{w}_{c_2}, \dots, \mathbf{w}_{c_C}\}$, where $C$ is the number of clusters.
+
+2. Mathematical Formulation
+
+Let $K$ be the total number of clients, and $C$ be the number of clusters.
+
+A. Local Objective Function
+
+The goal of client $k$ is to minimize its local empirical loss:
+
+$$\mathcal{L}_k(\mathbf{w}) = \frac{1}{n_k} \sum_{i \in \mathcal{D}_k} f_i(\mathbf{w})$$
+
+where $\mathcal{D}_k$ is the local dataset of client $k$, $n_k = |\mathcal{D}_k|$, and $f_i(\mathbf{w})$ is the loss for data point $i$.
+
+B. Clustering Criterion (Model Similarity)
+
+The core innovation is using the local model updates, not the raw data, to determine similarity. Clients whose local training results in similar model parameters or gradients are grouped together.
+
+The similarity between two clients, $k$ and $j$, is typically measured as the Euclidean distance between their local model weights after one round of training:
+
+$$\text{Sim}(k, j) = \| \mathbf{w}_k^{t+1} - \mathbf{w}_j^{t+1} \|_2$$
+
+A lower distance indicates higher similarity.
+
+3. The FedClust Algorithm (Detailed Steps)
+
+FedClust alternates between local training/model updating and a central clustering step, typically utilizing a classic clustering algorithm like K-Means or Hierarchical Clustering.
+
+Initialization (Central Server)
+
+Initialization: The server initializes a single global model $\mathbf{w}_g^0$ and sets the desired number of clusters, $C$.
+
+Initial Distribution: $\mathbf{w}_g^0$ is sent to all $K$ clients.
+
+Round $t$
+
+Step 1: Local Model Update
+
+Client Selection: A subset of clients, $S_t \subseteq K$, is selected for the current communication round $t$.
+
+Model Download: Each selected client $k \in S_t$ receives the model $\mathbf{w}_g^t$ (or its cluster-specific model, if clustering is already established).
+
+Local Training: Each client $k$ performs $E$ local epochs of Stochastic Gradient Descent (SGD) on its local dataset $\mathcal{D}_k$, starting from the received model $\mathbf{w}^t$.
+
+$$\mathbf{w}_k^{t+1} = \mathbf{w}^t - \eta \cdot \nabla \mathcal{L}_k(\mathbf{w}^t) \quad (\text{repeated } E \text{ times})$$
+
+Upload: Each client $k \in S_t$ sends its updated local model $\mathbf{w}_k^{t+1}$ back to the server.
+
+Step 2: Server Clustering
+
+The server performs clustering on the received models $\mathbf{W}^{t+1} = \{\mathbf{w}_k^{t+1} \mid k \in S_t\}$.
+
+Similarity Matrix: The server calculates the pairwise distance (similarity) between all uploaded models: $\text{Sim}(k, j)$.
+
+Clustering: A clustering algorithm (often K-Means or Hierarchical Clustering) partitions the clients $S_t$ into $C$ distinct, non-overlapping clusters: $\{\mathcal{C}_1, \mathcal{C}_2, \dots, \mathcal{C}_C\}$.
+
+Note: The number of clusters $C$ can be pre-defined or determined adaptively.
+
+Step 3: Cluster-Specific Aggregation
+
+The server aggregates the local models within each determined cluster $\mathcal{C}_c$.
+
+Aggregation: For each cluster $\mathcal{C}_c$, the server computes a new cluster-specific global model $\mathbf{w}_{c}^{t+1}$ using a weighted average (similar to FedAvg):
+
+$$\mathbf{w}_{c}^{t+1} = \sum_{k \in \mathcal{C}_c} \frac{n_k}{N_c} \cdot \mathbf{w}_k^{t+1}$$
+
+where $N_c = \sum_{k \in \mathcal{C}_c} n_k$ is the total number of data points in cluster $c$.
+
+Step 4: Model Distribution
+
+Model Assignment: The server assigns the newly aggregated cluster models $\mathbf{w}_{c}^{t+1}$ back to the clients in that cluster.
+
+Next Round: In the next communication round ($t+1$), clients are sampled and trained using their respective cluster model.
+
+4. Key Variants and Design Choices
+
+Feature
+
+Description
+
+FedClust Design Choice
+
+Clustering Target
+
+What is clustered to determine similarity?
+
+Model Weights ($\mathbf{w}_k$) are the most common target.
+
+Clustering Frequency
+
+How often is the clustering step performed?
+
+Every round (most common) or periodically (e.g., every 10 rounds).
+
+Clustering Algorithm
+
+Which algorithm is used to partition the clients?
+
+K-Means (simple and fast) or Hierarchical Agglomerative Clustering (allows for flexible cluster structure).
+
+Model Structure
+
+How are the models initialized?
+
+Single Model Initialization: All clients start with $\mathbf{w}_g^0$. Multiple Model Initialization: Each cluster starts with its own, distinct model from the beginning (less common).
+
+5. Summary
+
+FedClust successfully transforms the single-model optimization problem of standard FL into a multi-task optimization problem by identifying underlying groups of clients that share similar learning goals. This results in models that are better tailored to the specific data distributions of the clustered clients, leading to faster convergence and improved performance on non-IID data.
+
+Algorithm Flow Summary:
+
+Server Sends $\mathbf{w}_c$ to clients.
+
+Clients Train locally to get $\mathbf{w}_k$.
+
+Clients Upload $\mathbf{w}_k$.
+
+Server Clusters clients $k$ based on similarity of $\mathbf{w}_k$.
+
+Server Aggregates $\mathbf{w}_k$ within each cluster $\mathcal{C}_c$ to form $\mathbf{w}_{c}^{\text{new}}$.
+
+Server Sends $\mathbf{w}_{c}^{\text{new}}$ to the relevant clients.
+
+
+
+3rd algorithm
+The Federated Averaging (FedAvg) Algorithm
+
+Federated Averaging (FedAvg) is the standard baseline algorithm for Federated Learning (FL). Proposed by Google in 2017, it enables a central server to train a single, robust model using decentralized data residing on many client devices (such as mobile phones or IoT devices), without requiring the transfer of raw data.
+
+1. Motivation and Core Principle
+
+The primary goal of FedAvg is to minimize the global loss function across all clients $K$, defined as:
+
+$$\min_{\mathbf{w}} \mathcal{L}(\mathbf{w}) = \sum_{k=1}^{K} \frac{n_k}{N} \mathcal{L}_k(\mathbf{w})
+$$Where:
+
+* $\mathbf{w}$ is the model weight vector.
+* $\mathcal{L}_k(\mathbf{w})$ is the empirical loss function of client $k$.
+* $n_k$ is the number of data samples on client $k$.
+* $N = \sum_{k=1}^{K} n_k$ is the total number of data samples across all clients.
+
+The **Core Principle** of FedAvg is **Local Computation, Global Aggregation**. Clients perform multiple steps of training locally, and the server aggregates the resulting model weights, rather than aggregating gradients.
+
+## 2\. FedAvg Algorithm (Detailed Steps)
+
+The algorithm proceeds in communication rounds $t$, alternating between client-side computation and server-side aggregation.
+
+### Initialization (Central Server)
+
+1.  **Initialize Global Model:** The server initializes a starting global model $\mathbf{w}^0$.
+2.  **Define Parameters:** Set the total number of communication rounds ($T$), the fraction of clients sampled per round ($R$), the number of local epochs ($E$), and the local learning rate ($\eta$).
+
+### Round $t = 1, 2, \dots, T$
+
+#### Step 1: Server Broadcast
+
+The server initiates the round by selecting a subset of clients and sending them the current global model.
+
+1.  **Client Selection:** The server randomly selects a fraction $R$ of the total clients, forming the active client set $\mathcal{S}_t$.
+2.  **Model Distribution:** The current global model weights $\mathbf{w}^t$ are sent to all selected clients $k \in \mathcal{S}_t$.
+
+#### Step 2: Client Update (Local Computation)
+
+Each selected client $k$ performs localized training on its private dataset $\mathcal{D}_k$.
+
+1.  **Start Model:** Client $k$ initializes its local model $\mathbf{w}_k$ to the received global model $\mathbf{w}^t$.
+
+2.  **Local Training:** The client performs $E$ local epochs of Stochastic Gradient Descent (SGD) on its local objective $\mathcal{L}_k$, with learning rate $\eta$.$$
+
+$$\\mathbf{w}\_k^{t+1} = \\mathbf{w}\_k^t - \\eta \\cdot \\nabla \\mathcal{L}\_k(\\mathbf{w}\_k^t) \\quad (\\text{repeated } E \\text{ times})
+
+$$
+$$The final local model, $\mathbf{w}_k^{t+1}$, is the result of this local optimization.
+
+
+Upload: Client $k$ sends its updated model weights $\mathbf{w}_k^{t+1}$ back to the server.
+
+Step 3: Server Aggregation (Weighted Averaging)
+
+The server receives the updated models from all active clients and computes a weighted average to form the new global model $\mathbf{w}^{t+1}$.
+
+Aggregation Formula: The new global model is computed as the data-weighted average of the received local models:
+
+$$\\ \mathbf{w}^{t+1} = \sum\_{k \in \mathcal{S}\_t} \frac{n\_k}{N\_t} \cdot \mathbf{w}\_k^{t+1}$$
+
+$$$$Where $N_t = \sum_{k \in \mathcal{S}_t} n_k$ is the total number of data samples from the clients participating in the current round.
+
+Update: The server sets the new global model to $\mathbf{w}^{t+1}$.
+
+The process then repeats for the next round $t+1$.
+
+3. Key Design Choices and Implications
+
+Feature
+
+FedAvg Design Choice
+
+Implication
+
+Local Epochs ($E$)
+
+Typically $E \ge 1$ (e.g., $E=5$ or $10$).
+
+Allows for fewer communication rounds ($T$) for the same training effort, which is essential for low-bandwidth networks.
+
+Aggregation Weight
+
+Weighted by client data size ($n_k / N_t$).
+
+Ensures that clients with more data have a proportionally larger influence on the resulting global model.
+
+Communication
+
+Only model weights are transmitted.
+
+Data privacy is preserved as raw data stays on the device.
+
+Convergence
+
+Can suffer from client drift in highly non-IID settings.
+
+The local objective $\mathcal{L}_k$ diverges from the global objective $\mathcal{L}$, causing the local models $\mathbf{w}_k$ to move in inconsistent directions.
+
+4. Relationship to Fed-PRISM
+
+Fed-PRISM is an extension designed to mitigate the non-IID challenges inherent in FedAvg by introducing personalization.
+
+Feature
+
+FedAvg
+
+Fed-PRISM
+
+Number of Models
+
+One Global Model ($\mathbf{w}_g$).
+
+One Global Model + $K$ Cluster Models ($\mathbf{w}_c$).
+
+Model Sent to Client
+
+The Global Model $\mathbf{w}_g$.
+
+A Personalized Ensemble Model ($\mathbf{w}^{\text{pers}}$) combining $\mathbf{w}_g$ and relevant $\mathbf{w}_c$'s.
+
+Aggregation
+
+Simple data-weighted average of all clients into $\mathbf{w}_g$.
+
+Aggregates into $\mathbf{w}_g$ (simple average) AND into $\mathbf{w}_c$'s (soft-weighted average).
+
+Handling Non-IID
+
+Struggles due to single shared objective.
+
+Uses clustering and ensemble to create specialized, personalized objectives.
+
+
+4th algortim 
+
+local computation for all clients
